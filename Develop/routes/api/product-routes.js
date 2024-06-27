@@ -1,21 +1,51 @@
 const router = require('express').Router();
+const { model } = require('../../config/connection');
 const { Product, Category, Tag, ProductTag } = require('../../models');
 
-// The `/api/products` endpoint
 
-// get all products
+// The following route handler handles GET requests to the root path.
+// It returns all product data including related categories and tags.
+// Due to the many-to-many relationship between products and tags,
+// the ProductTag model is used as an accociation table to link them.
 router.get('/', (req, res) => {
-  // find all products
-  // be sure to include its associated Category and Tag data
+  Product.findAll({
+    include: [
+      Category, {
+        model: Tag,
+        through: ProductTag,
+      },
+    ],
+  })
+  .then((products) => res.json(products))
+  .catch((err) => {
+    console.log(err);
+    res.status(500).json(err);
+  });
 });
 
-// get one product
+// The following route handler handles GET requests for a single product using that products id.
+// It returns that single product including related categories and tags.
 router.get('/:id', (req, res) => {
-  // find a single product by its `id`
-  // be sure to include its associated Category and Tag data
+  Product.findOne({
+    where: {
+      id: req.params.id,
+    },
+    include: [
+      Category, {
+        model: Tag,
+        through: ProductTag,
+      },
+    ],
+  })
+  .then((products) => res.json(products))
+  .catch((err) => {
+    console.log(err);
+    res.status(400).json(err);
+  });
 });
 
-// create new product
+// The following route handler handles POST requests for creating new products in the database.
+// The new product is added to the database with or without tags depending on the information in the request body.
 router.post('/', (req, res) => {
   /* req.body should look like this...
     {
@@ -27,7 +57,6 @@ router.post('/', (req, res) => {
   */
   Product.create(req.body)
     .then((product) => {
-      // if there's product tags, we need to create pairings to bulk create in the ProductTag model
       if (req.body.tagIds.length) {
         const productTagIdArr = req.body.tagIds.map((tag_id) => {
           return {
@@ -37,7 +66,6 @@ router.post('/', (req, res) => {
         });
         return ProductTag.bulkCreate(productTagIdArr);
       }
-      // if no product tags, just respond
       res.status(200).json(product);
     })
     .then((productTagIds) => res.status(200).json(productTagIds))
@@ -47,9 +75,9 @@ router.post('/', (req, res) => {
     });
 });
 
-// update product
+// The following route handler handles PUT requests to update single products selected by id.
+// Tags are also added or removed based on the updated product data.
 router.put('/:id', (req, res) => {
-  // update product data
   Product.update(req.body, {
     where: {
       id: req.params.id,
@@ -57,11 +85,9 @@ router.put('/:id', (req, res) => {
   })
     .then((product) => {
       if (req.body.tagIds && req.body.tagIds.length) {
-
         ProductTag.findAll({
           where: { product_id: req.params.id }
         }).then((productTags) => {
-          // create filtered list of new tag_ids
           const productTagIds = productTags.map(({ tag_id }) => tag_id);
           const newProductTags = req.body.tagIds
             .filter((tag_id) => !productTagIds.includes(tag_id))
@@ -71,29 +97,38 @@ router.put('/:id', (req, res) => {
                 tag_id,
               };
             });
-
-          // figure out which ones to remove
           const productTagsToRemove = productTags
             .filter(({ tag_id }) => !req.body.tagIds.includes(tag_id))
             .map(({ id }) => id);
-          // run both actions
           return Promise.all([
             ProductTag.destroy({ where: { id: productTagsToRemove } }),
             ProductTag.bulkCreate(newProductTags),
           ]);
         });
       }
-
       return res.json(product);
     })
     .catch((err) => {
-      // console.log(err);
+      console.log(err);
       res.status(400).json(err);
     });
 });
 
+// The following route handler handles DELETE requests that will delete an existing product based on the id in the request.
 router.delete('/:id', (req, res) => {
-  // delete one product by its `id` value
+  Product.destroy({
+    where: {
+      id: req.params.id,
+    }, 
+  })
+  .then((products) => {
+    console.log(products);
+    res.json(products);
+  })
+  .catch((err) => {
+    console.log(err);
+    res.status(400).json(err);
+  });
 });
 
 module.exports = router;
